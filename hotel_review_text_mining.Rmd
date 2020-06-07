@@ -1,0 +1,175 @@
+---
+title: "Hotel review using Text mining"
+author: "Karishma Prasad"
+date: "07/06/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+Setting the working directory
+```{r }
+setwd("D:/Github_repository/hotel_review_text_mining")
+```
+<b> 1.  Read Files after Data Cleaning </b>
+```{r}
+library(readxl)
+Hotel_1 <- read_excel('Review1.xlsx')
+```
+<b> 2. COMBINING REVIEW HEADING WITH REVIEW </b>
+
+```{r}
+# Retaining columns with text only
+Hotel_Dataset <- Hotel_1          # Retaining the Text only
+Review_Hotel <- paste(Hotel_Dataset$Review.Heading,
+                      Hotel_Dataset$Review)
+head(Review_Hotel)
+```
+<b> 3. TEXT CLEANING </b>
+```{r}
+Review_Hotel <- tolower(Review_Hotel)                 # a. Converting to lower case
+
+Review_Hotel <- gsub("one", "", Review_Hotel)         # b. Removing Words   
+Review_Hotel <- gsub("can", "", Review_Hotel)
+Review_Hotel <- gsub("just", "", Review_Hotel)
+
+Review_Hotel <- gsub("[[:punct:]]", "", Review_Hotel) # c. Removing Punctuation 
+
+Review_Hotel <- gsub("[[:digit:]]", "", Review_Hotel) # d.Removing Digits
+
+Review_Hotel <- gsub("^ ", "", Review_Hotel)          # e.Removing Leading Blank Spaces 
+Review_Hotel <- gsub(" $", "", Review_Hotel)          # f.Removing Blank Spaces at the end 
+Review_Hotel <- gsub("[\r\n]", "", Review_Hotel)      # g. Removing \r\n from review
+head(Review_Hotel)
+```
+
+<b> 4. CONVERTING TEXT VECTOR INTO CORPUS <\b>
+```{r}
+library(tm)                           # load tm package
+
+
+corpus_Hotel <- Corpus(VectorSource(Review_Hotel))      # a. Creating Corpus
+
+corpus_Hotel <- tm_map(corpus_Hotel,                    # b. Clean Corpus - Removing StopWords
+                       removeWords,stopwords("english"))
+corpus_Hotel <- tm_map(corpus_Hotel, stripWhitespace)   # c. Clean Corpus - Removing Whitespace
+inspect(corpus_Hotel)
+```
+```{r}
+library('SnowballC')
+stem_corpus_Hotel <- tm_map(corpus_Hotel, stemDocument) # d. Stem the words to their roots
+inspect(stem_corpus_Hotel)
+```
+<b> 6. LOAD POSITIVE AND NEGATIVE LEXICON </b>
+```{r}
+positive_lexicon <- read.csv("positive-lexicon.txt")
+negative_lexicon <- read.csv("negative-lexicon.txt")
+```
+<b> 7. CREATING FUNCTION </b>
+```{r}
+#------------CREATING SENTIMENT ANALYSIS FUNCTION -------------------
+sentiment <- function(stem_corpus)
+{
+  total_pos_count <- 0
+  total_neg_count <- 0
+  pos_count_vector <- c()
+  neg_count_vector <- c()
+  positive_val <- 0
+  negative_val <-0
+  #Calculate the size of the corpus
+  size <- length(stem_corpus)
+  for(i in 1:size)
+  {
+    #All the words in current review
+    corpus_words<- list(strsplit(stem_corpus[[i]]$content, split = " "))
+    
+    #positive words in current review
+    pos_words <- intersect(unlist(corpus_words), unlist(positive_lexicon))
+    pos_count <-length(pos_words)
+    #print (pos_words)   ## MIGHT COMMENT AGAIN
+    #negative words in current review
+    neg_words <- intersect(unlist(corpus_words), unlist(negative_lexicon))
+    neg_count <- length(neg_words)
+    #print (neg_words)
+    total_pos_count <- total_pos_count + pos_count ## overall positive count
+    total_neg_count <- total_neg_count + neg_count ## overall negative count
+    #return (neg_words)
+  }
+  #Calculating overall percentage of positive and negative words of all the reviews
+  total_pos_count ## overall positive count
+  total_neg_count ## overall negative count
+  total_count <- total_pos_count + total_neg_count
+  overall_positive_percentage <- (total_pos_count*100)/total_count
+  overall_negative_percentage <- (total_neg_count*100)/total_count
+  overall_positive_percentage ## overall positive percentage
+  
+  #Create a dataframe with all the positive and negative reviews
+  df<-data.frame(Review_Type=c("Postive","Negative"),
+                 Count=c(total_pos_count ,total_neg_count ))
+  print(df) #Print
+  overall_positive_percentage<-paste("Percentage of Positive Reviews:",
+                                     round(overall_positive_percentage,2),"%")
+  overall_negative_percentage<-paste("Percentage of Negative Reviews:",
+                                     round(overall_negative_percentage,2),"%")
+ print(overall_positive_percentage)
+ print(overall_negative_percentage)
+
+}
+```
+<b> 8. CALLING FUNCTION <\b> 
+```{r}
+sentiment(stem_corpus_Hotel)
+```
+<b> 9. DOCUMENT TERM MATRIX <\b> 
+```{r}
+# a. Conversion of Corpus to DTM
+dtm <- TermDocumentMatrix(stem_corpus_Hotel,  
+                          control = list(minWordLength=c(1,Inf))
+)
+dtm
+```
+```{r}
+# b. Find frequent terms in a document-term matrix.
+chose_Freq = 10 #Choosing frequency
+findFreqTerms(dtm,lowfreq = chose_Freq)  
+```
+```{r}
+# c. To see the words with Frequency
+termFrequency <- rowSums(as.matrix(dtm))     
+termFrequency <- subset(termFrequency,
+                        termFrequency>= chose_Freq)
+
+# d. Sorting terms in decreasing order
+wordfreq <-sort(termFrequency,decreasing = TRUE)  
+wordfreq
+
+```
+<b> 10. VISUALISATION <\b> 
+```{r}
+#                  a. Bar plot of the words used - Random Order
+
+barplot(wordfreq[1:20], #Including only top 20 words
+        main = 'Frequncy Bar Plot of Terms',
+        xlab = "Terms", cex.axis = 0.7,              
+        ylab = "Frequency",
+        cex = 0.75,
+        las=2, col=heat.colors(20)) 
+
+```
+```{r}
+#                  c. Word Cloud
+library(wordcloud)                    # load wordcloud package
+library (RColorBrewer)
+
+wordcloud(words = names(wordfreq), #scale = c(1,.95), 
+          freq=wordfreq,max.words=150, min.freq = chose_Freq, 
+          random.order = F,rot.per=0.35, colors = brewer.pal(6,"Dark2"))
+```
